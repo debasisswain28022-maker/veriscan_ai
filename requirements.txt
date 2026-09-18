@@ -1,0 +1,36 @@
+# VeriScan AI — dependencies
+# sqlite3 is part of the Python standard library and is not listed here.
+#
+# NOTE: pytesseract is a wrapper — it requires the Tesseract OCR binary
+# to be installed separately at the OS level (e.g. `apt install
+# tesseract-ocr` on Debian/Ubuntu, `brew install tesseract` on macOS).
+# modules/ocr.py uses pytesseract as its default engine.
+
+streamlit
+opencv-python
+pillow
+numpy
+pytesseract
+# easyocr           # alternative OCR backend — uncomment if preferred over pytesseract
+python-dateutil     # flexible date parsing for modules/validation.py
+
+# NOTE: face_recognition depends on dlib, which has no prebuilt wheel on
+# every platform and needs a from-source compile (cmake + a C++
+# toolchain) that commonly takes 10+ minutes — often impractical in
+# CI/sandboxed environments. deepface (used below) has no such
+# compile step: it installs from prebuilt wheels (pulling in
+# tensorflow + tf-keras) and is the backend this project ships with
+# and has been tested against. If neither is installed,
+# modules/face_verification.py automatically falls back to a much
+# lower-fidelity OpenCV-only comparator so the app still runs.
+deepface
+tf-keras            # required by deepface on tensorflow>=2.16 (Keras 3)
+# face_recognition  # alternative backend — real biometric embeddings via dlib,
+                    # but expect a slow from-source build; uncomment if you can
+                    # afford the compile time (or have a prebuilt dlib wheel)
+
+# Testing (tests/test_pipeline.py); scikit-image is only needed to
+# regenerate the tampered_passport.jpg fixture via
+# data/test_documents/_generate.py (it supplies a real sample face).
+pytest
+scikit-image
