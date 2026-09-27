@@ -467,20 +467,59 @@ def _search_labeled_value_with_strength(
             continue
 
         same_line_value = match.group(1).strip(" .:-")
-        next_line_value = lines[idx + 1].strip(" .:-") if idx + 1 < len(lines) else ""
 
-        for candidate in (same_line_value, next_line_value):
-            if not candidate:
-                continue
+        if same_line_value:
             if value_regex:
-                found = re.search(value_regex, candidate, re.IGNORECASE)
+                found = re.search(value_regex, same_line_value, re.IGNORECASE)
                 if found:
                     return found.group(0).strip(), "regex_match"
-            elif len(candidate) >= 2:
-                return candidate, "direct_match"
+            elif len(same_line_value) >= 2:
+                return same_line_value, "direct_match"
 
-        if value_regex and len(same_line_value) >= 2:
+        # Check lookahead window (up to 3 lines ahead)
+        for offset in range(1, 4):
+            if idx + offset >= len(lines):
+                break
+            candidate_line = lines[idx + offset].strip(" .:-")
+            if not candidate_line:
+                continue
+
+            if value_regex:
+                matches = list(re.finditer(value_regex, candidate_line, re.IGNORECASE))
+                if matches:
+                    if len(matches) == 1:
+                        return matches[0].group(0).strip(), "regex_match"
+
+                    header_date_labels_pattern = (
+                        r"\b(?:issue\s*date|date\s*of\s*issue|issued\s*date|issued\s*on|"
+                        r"validity(?:\s*\([^)]*\))?|valid\s*until|valid\s*till|"
+                        r"valid\s*upto|valid\s*up\s*to|valid\s*to|expiry|exp|dob|date\s*of\s*birth)\b"
+                    )
+                    headers_on_line = list(re.finditer(header_date_labels_pattern, line, re.IGNORECASE))
+                    target_start = match.start()
+
+                    target_idx = 0
+                    for h_idx, h_match in enumerate(headers_on_line):
+                        if abs(h_match.start() - target_start) <= 5:
+                            target_idx = h_idx
+                            break
+
+                    if target_idx < len(matches):
+                        return matches[target_idx].group(0).strip(), "regex_match"
+                    else:
+                        closest = min(matches, key=lambda m: abs(m.start() - target_start))
+                        return closest.group(0).strip(), "regex_match"
+            elif len(candidate_line) >= 2:
+                if offset == 1:
+                    return candidate_line, "direct_match"
+
+        # Weak fallback: ONLY if value_regex is NOT specified, or if same_line_value actually contains digits matching regex
+        if not value_regex and len(same_line_value) >= 2:
             return same_line_value, "weak_fallback"
+        elif value_regex and re.search(r"\d", same_line_value):
+            found_fb = re.search(value_regex, same_line_value, re.IGNORECASE)
+            if found_fb:
+                return found_fb.group(0).strip(), "weak_fallback"
 
     return NOT_DETECTED, "not_found"
 
@@ -615,7 +654,17 @@ def parse_passport_fields(
 
         value, strength = _search_labeled_value_with_strength(
             lines,
-            [r"date\s*of\s*expiry", r"expiry\s*date", r"date\s*of\s*expiration", r"expiration\s*date", r"valid\s*until"],
+            [
+                r"date\s*of\s*expiry",
+                r"expiry\s*date",
+                r"date\s*of\s*expiration",
+                r"expiration\s*date",
+                r"valid\s*until",
+                r"\bvalidity\b",
+                r"valid\s*to",
+                r"expires",
+                r"\bexp\b",
+            ],
             value_regex=_DATE_PATTERN,
         )
         fields["Date of Expiry"] = value
@@ -711,11 +760,35 @@ def parse_generic_id_fields(
 
         fields["Name"], confidences["Name"] = _extract_name(lines, bounding_boxes, ocr_confidence)
 
+        doc_number_labels = [
+            r"license\s*no\.?",
+            r"licence\s*no\.?",
+            r"dl\s*no\.?",
+            r"id\s*no\.?",
+            r"card\s*no\.?",
+            r"document\s*no\.?",
+            r"document\s*number",
+            r"license\s*number",
+            r"licence\s*number",
+            r"id\s*number",
+        ]
         value, strength = _search_labeled_value_with_strength(
             lines,
-            [r"license\s*no\.?", r"dl\s*no\.?", r"id\s*no\.?", r"card\s*no\.?", r"document\s*no\.?", r"number"],
-            value_regex=r"\b(?=[A-Za-z0-9\-]{6,18}\b)(?=.*\d)[A-Za-z0-9\-]{6,18}\b",
+            doc_number_labels,
+            value_regex=r"\b(?=[A-Za-z0-9\-]{5,20}\b)(?=.*\d)[A-Za-z0-9\-]{5,20}\b",
         )
+        if value == NOT_DETECTED:
+            # Fallback for unlabelled standalone DL/ID numbers (e.g. OD07 20250006115)
+            dl_match = re.search(r"\b[A-Z]{2}\d{2}[\s\-]?\d{11,13}\b", raw_text)
+            if dl_match:
+                value = dl_match.group(0).strip()
+                strength = "regex_match"
+            else:
+                gen_match = re.search(r"\b(?=[A-Za-z0-9\-\s]{6,20}\b)(?=.*\d)[A-Z]{1,3}[0-9\-\s]{5,18}\b", raw_text)
+                if gen_match:
+                    value = gen_match.group(0).strip()
+                    strength = "regex_match"
+
         fields["Document Number"] = value
         confidences["Document Number"] = _field_confidence(value, strength, bounding_boxes, ocr_confidence)
 
@@ -725,15 +798,65 @@ def parse_generic_id_fields(
         fields["Date of Birth"] = value
         confidences["Date of Birth"] = _field_confidence(value, strength, bounding_boxes, ocr_confidence)
 
+        expiry_patterns = [
+            r"date\s*of\s*expiry",
+            r"expiry\s*date",
+            r"expiration\s*date",
+            r"valid\s*until",
+            r"\bexp\b",
+            r"\bvalidity\b",
+            r"validity\s*\(?\s*nt\s*\)?",
+            r"validity\s*\(?\s*tr\s*\)?",
+            r"valid\s*till",
+            r"valid\s*upto",
+            r"valid\s*up\s*to",
+            r"valid\s*to",
+            r"valid\s*through",
+            r"expires",
+            r"val\.?\s*date",
+            r"val\.?\s*until",
+        ]
         value, strength = _search_labeled_value_with_strength(
             lines,
-            [r"date\s*of\s*expiry", r"expiry\s*date", r"expiration\s*date", r"valid\s*until", r"\bexp\b"],
+            expiry_patterns,
             value_regex=_DATE_PATTERN,
         )
         fields["Date of Expiry"] = value
         confidences["Date of Expiry"] = _field_confidence(value, strength, bounding_boxes, ocr_confidence)
 
+        # Smart date fallback for Date of Expiry if labeled search failed, returned DOB, or returned non-date text
+        is_expiry_invalid = (
+            fields["Date of Expiry"] == NOT_DETECTED
+            or fields["Date of Expiry"] == fields.get("Date of Birth")
+            or not re.search(r"\d", fields.get("Date of Expiry", ""))
+        )
+        if is_expiry_invalid:
+            dob_val = fields.get("Date of Birth", NOT_DETECTED)
+            all_dates = list(re.finditer(_DATE_PATTERN, raw_text, re.IGNORECASE))
+            candidate_dates = []
+            for dm in all_dates:
+                dstr = dm.group(0).strip()
+                if dstr != dob_val and dstr not in candidate_dates:
+                    candidate_dates.append(dstr)
+            if candidate_dates:
+                def _get_year(d_str):
+                    m = re.search(r"\b(19\d{2}|20\d{2})\b", d_str)
+                    return int(m.group(1)) if m else 0
+
+                sorted_dates = sorted(candidate_dates, key=_get_year, reverse=True)
+                best_date = sorted_dates[0]
+                if _get_year(best_date) > 2000:
+                    fields["Date of Expiry"] = best_date
+                    confidences["Date of Expiry"] = _field_confidence(best_date, "regex_match", bounding_boxes, ocr_confidence)
+
         fields["Gender"], confidences["Gender"] = _extract_gender(lines, bounding_boxes, ocr_confidence)
+
+        # Alias keys to keep compatibility across validation and DB modules
+        doc_num = fields.get("Document Number", NOT_DETECTED)
+        doc_conf = confidences.get("Document Number", 0)
+        for key in ("License Number", "ID Number", "Permit Number"):
+            fields[key] = doc_num
+            confidences[key] = doc_conf
 
     except Exception:
         fields = {field: NOT_DETECTED for field in GENERIC_ID_FIELDS}

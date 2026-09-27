@@ -374,6 +374,11 @@ def compute_risk_score(
             risk_score = floor
             floor_applied = True
 
+    if face_match_score is not None and face_match_score < 50.0:
+        if risk_score < 65:
+            risk_score = 65
+            floor_applied = True
+
     if tampering_score and tampering_score >= 30 and validation_result and validation_result.get("status") == "fail":
         if risk_score < 55:
             risk_score = 55

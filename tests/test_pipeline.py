@@ -50,7 +50,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from utils import preprocessing
-from modules import ocr, validation, database, tampering, risk_engine
+from modules import ocr, validation, database, tampering, risk_engine, face_verification
 
 TEST_DOCUMENTS_DIR = os.path.join(PROJECT_ROOT, "data", "test_documents")
 
@@ -177,6 +177,69 @@ class TestPipelineRiskBands(unittest.TestCase):
         self.assertEqual(parsed["Gender"], "M")
         self.assertEqual(parsed["Date of Birth"], "03/07/1978")
         self.assertEqual(parsed["Date of Expiry"], "10/02/2020")
+
+    def test_driving_license_validity_extraction(self):
+        dl_raw_text = (
+            "INDIAN UNION DRIVING LICENCE\n"
+            "ISSUED BY ODISHA\n"
+            "OD07 20250006115\n"
+            "Issue Date Validity ( NT ) Validity ( TR )\n"
+            "16-08-2025 01-05-2046\n\n"
+            "Name : SUMIT MOHAPATRA\n"
+            "Date Of Birth :02-05-2006 Blood Group: Unknown Organ Donor :No\n"
+            "Son/Daughter/Wife of : LINGARAJ MOHAPATRA\n"
+            "Present Address\n"
+            "S/O-LINGARAJ MOHAPATRA,\n"
+            "RAGHUPATI NAGAR 1ST LINE Panigrahipentho,\n"
+            "Brahmapur Sadar Brahmapur Sadar Ganjam Odisha,760006\n"
+        )
+        extracted = ocr.parse_generic_id_fields(dl_raw_text)
+        fields = extracted[0]
+        self.assertEqual(fields["Date of Expiry"], "01-05-2046")
+        self.assertEqual(fields["Date of Birth"], "02-05-2006")
+        self.assertIn(fields["Document Number"], ("OD07 20250006115", "OD0720250006115"))
+
+        val_result = validation.validate_document(fields, "Driving License")
+        self.assertEqual(val_result["status"], "pass")
+
+
+    def test_driving_license_validity_extraction_with_ocr_gap(self):
+        # Simulates Tesseract OCR interleaving neighboring bounding box lines (e.g. "ADPVEH No.(Regn.Numbers) :")
+        dl_raw_text = (
+            "INDIAN UNION DRIVING LICENCE\n"
+            "ISSUED BY ODISHA\n"
+            "OD07 20250006115\n"
+            "Issue Date Validity ( NT ) Validity ( TR )\n"
+            "ADPVEH No.(Regn.Numbers) :\n"
+            "16-08-2025 01-05-2046\n\n"
+            "Name : SUMIT MOHAPATRA\n"
+            "Date Of Birth :02-05-2006 Blood Group: Unknown Organ Donor :No\n"
+        )
+        extracted = ocr.parse_generic_id_fields(dl_raw_text)
+        fields = extracted[0]
+        self.assertEqual(fields["Date of Expiry"], "01-05-2046")
+        self.assertEqual(fields["Date of Birth"], "02-05-2006")
+        self.assertIn(fields["Document Number"], ("OD07 20250006115", "OD0720250006115"))
+
+
+    def test_face_verification(self):
+        import cv2
+        import numpy as np
+
+        # Create two synthetic face image crops with skin tone and facial features
+        face1 = np.zeros((200, 200, 3), dtype=np.uint8)
+        face2 = np.zeros((200, 200, 3), dtype=np.uint8)
+        cv2.circle(face1, (100, 100), 60, (150, 170, 210), -1)
+        cv2.circle(face2, (100, 100), 60, (150, 170, 210), -1)
+        cv2.circle(face1, (80, 80), 8, (40, 30, 20), -1)
+        cv2.circle(face1, (120, 80), 8, (40, 30, 20), -1)
+        cv2.circle(face2, (80, 80), 8, (40, 30, 20), -1)
+        cv2.circle(face2, (120, 80), 8, (40, 30, 20), -1)
+
+        result = face_verification.compare_faces(face1, face2, db_reference_photo=face1)
+        self.assertIsNotNone(result)
+        self.assertTrue(result["is_match"])
+        self.assertGreaterEqual(result["similarity_score"], 50.0)
 
 
 if __name__ == "__main__":

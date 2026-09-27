@@ -72,6 +72,9 @@ def _normalize_document_type(document_type: Optional[str]) -> str:
 REQUIRED_FIELDS = {
     "passport": PASSPORT_FIELDS,
     "visa": VISA_FIELDS,
+    "drivers_license": ["Name", "Document Number", "Date of Birth", "Date of Expiry"],
+    "national_id": ["Name", "Document Number", "Date of Birth"],
+    "permit": ["Name", "Document Number", "Date of Expiry"],
 }
 
 DOCUMENT_NUMBER_FIELD = {
@@ -89,8 +92,8 @@ DOCUMENT_NUMBER_PATTERNS = {
     "passport": r"^[A-Z0-9]{6,9}$",
     "visa": r"^[A-Z0-9]{6,12}$",
     "national_id": r"^[A-Z0-9]{6,12}$",
-    "drivers_license": r"^[A-Z0-9\-]{5,15}$",
-    "permit": r"^[A-Z0-9\-]{4,15}$",
+    "drivers_license": r"^[A-Z0-9\-\s]{5,20}$",
+    "permit": r"^[A-Z0-9\-\s]{4,20}$",
 }
 
 # Illustrative maximum reasonable stay (in days) per entry-validity type,
@@ -116,9 +119,22 @@ def _field_value(fields: Dict[str, Any], field_name: str) -> str:
     """
     Read a plain string value out of a fields dict entry. Defensive
     against a future nested {"value": ...} shape as well as the
-    current plain-string shape produced by modules.ocr.
+    current plain-string shape produced by modules.ocr. Also checks
+    common field name aliases (e.g. License Number -> Document Number).
     """
     raw = fields.get(field_name, NOT_DETECTED)
+    if not raw or raw == NOT_DETECTED:
+        aliases = {
+            "License Number": ["Document Number", "ID Number"],
+            "ID Number": ["Document Number", "License Number"],
+            "Permit Number": ["Document Number"],
+            "Document Number": ["License Number", "ID Number", "Permit Number"],
+        }
+        for alt_key in aliases.get(field_name, []):
+            raw = fields.get(alt_key, NOT_DETECTED)
+            if raw and raw != NOT_DETECTED:
+                break
+
     if isinstance(raw, dict):
         return raw.get("value", NOT_DETECTED) or NOT_DETECTED
     return raw if raw else NOT_DETECTED
@@ -347,9 +363,6 @@ def check_date_logic(fields: Dict[str, Any], document_type: str) -> List[Dict[st
     """
     normalized = _normalize_document_type(document_type)
     issues: List[Dict[str, str]] = []
-
-    if normalized != "passport":
-        return issues
 
     dob_raw = _field_value(fields, "Date of Birth")
     expiry_raw = _field_value(fields, "Date of Expiry")

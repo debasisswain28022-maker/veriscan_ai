@@ -241,15 +241,11 @@ def resize_image(image: Any, max_dimension: int = 1600) -> Any:
 
 def normalize_orientation(image: np.ndarray) -> np.ndarray:
     """
-    Correct image orientation for standard document aspect ratios.
-    If an image is uploaded in portrait mode (height > width) for landscape
-    documents, auto-rotates 90 degrees clockwise to optimize OCR layout reading.
+    Ensure image orientation is valid, preserving original aspect ratio
+    and portrait/landscape layout. Avoids forcibly rotating vertical/portrait images.
     """
     if image is None:
         return image
-    h, w = image.shape[:2]
-    if h > w * 1.15:
-        return cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
     return image
 
 

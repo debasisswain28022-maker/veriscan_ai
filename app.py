@@ -584,6 +584,15 @@ def run_screening_pipeline(uploads: Dict[str, Any], options: Dict[str, Any]) -> 
         lambda exc: (None, {"status": "Not Found", "record": None, "error": f"DB check stage failed unexpectedly: {exc}"}),
     )
 
+    # Perform DB cross-field check (OCR extracted fields vs DB record)
+    db_record = db_check_result.get("record") if db_check_result else None
+    if db_record:
+        db_mismatches = database.cross_check_ocr_with_db(ocr_result["fields"], db_record)
+        if db_mismatches:
+            validation_result["issues"].extend(db_mismatches)
+            if any(m["severity"] == "error" for m in db_mismatches):
+                validation_result["status"] = "fail"
+
     tampering_result = _run_stage(
         "Tampering detection", "Analyzing document for signs of tampering...",
         lambda: tampering.detect_tampering(
@@ -592,12 +601,16 @@ def run_screening_pipeline(uploads: Dict[str, Any], options: Dict[str, Any]) -> 
         lambda exc: {"tampering_score": 0, "risk_level": "low", "flags": [], "details": {}},
     )
 
+    db_photo_path = db_record.get("photo_path") if db_record else None
+
     face_match_result = None
     selfie_array = uploads.get("face_processed")
     if selfie_array is not None:
         face_match_result = _run_stage(
             "Face verification", "Verifying face match...",
-            lambda: face_verification.compare_faces(color_image, selfie_array),
+            lambda: face_verification.compare_faces(
+                color_image, selfie_array, db_reference_photo=db_photo_path
+            ),
             lambda exc: {
                 "is_match": None, "similarity_score": None, "threshold": 50.0,
                 "backend_used": None, "raw_distance": None,
@@ -622,6 +635,16 @@ def run_screening_pipeline(uploads: Dict[str, Any], options: Dict[str, Any]) -> 
         },
     )
 
+    ledger_entry = _run_stage(
+        "Audit ledger recording", "Recording screening verdict in hash-chained audit ledger...",
+        lambda: blockchain.add_record(
+            document_id=document_number or "Not Detected",
+            risk_score=risk_result.get("risk_score", 50),
+            decision=risk_result.get("risk_band", "MEDIUM"),
+        ),
+        lambda exc: None,
+    )
+
     return {
         "document_type": document_type,
         "ocr_fields": ocr_result["fields"],
@@ -637,6 +660,7 @@ def run_screening_pipeline(uploads: Dict[str, Any], options: Dict[str, Any]) -> 
         "tampering": tampering_result,
         "face_match": face_match_result,
         "risk": risk_result,
+        "ledger_entry": ledger_entry,
         "pipeline_warnings": pipeline_warnings,
     }
 
@@ -759,14 +783,22 @@ def render_db_check_panel(db_check: Dict[str, Any], document_number: str) -> Non
         st.caption(f"⚠️ {db_check['error']}")
 
     if record:
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         col1.metric("Name on file", record.get("full_name") or "—")
-        col2.metric("Nationality on file", record.get("nationality") or "—")
-        col3.metric("Registry expiry", record.get("expiry_date") or "—")
+        col2.metric("Date of Birth", record.get("dob") or "—")
+        col3.metric("Gender", record.get("gender") or "—")
+        col4.metric("Registry expiry", record.get("expiry_date") or "—")
+
+        if record.get("photo_path"):
+            import os
+            if os.path.exists(record["photo_path"]):
+                st.markdown("**Official Database Reference Photo:**")
+                st.image(record["photo_path"], caption=f"Database Reference Photo — {record.get('full_name')}", width=160)
+
         if record.get("notes"):
             st.caption(f"Notes: {record['notes']}")
 
-    st.caption("This registry is a synthetic mock dataset for demonstration only — not a real government or issuer database.")
+    st.caption("Official Registry Database — Ground truth records for identity & document verification.")
 
 
 def render_tampering_panel(tampering_result: Dict[str, Any]) -> None:
