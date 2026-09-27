@@ -33,13 +33,13 @@ import cv2
 import numpy as np
 
 try:
-    import face_recognition as _face_recognition_lib
+    import face_recognition as _face_recognition_lib  # type: ignore # noqa: F401
     _FACE_RECOGNITION_AVAILABLE = True
 except ImportError:
     _FACE_RECOGNITION_AVAILABLE = False
 
 try:
-    from deepface import DeepFace as _DeepFace
+    from deepface import DeepFace as _DeepFace  # type: ignore # noqa: F401
     _DEEPFACE_AVAILABLE = True
 except Exception:
     _DEEPFACE_AVAILABLE = False
