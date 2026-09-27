@@ -1,6 +1,6 @@
 # 🛂 VeriScan AI — Identity & Travel Document Screening System
 
-**VeriScan AI** is an intelligent decision-support platform designed for border security, identity verification, and document screening. It wires together Optical Character Recognition (OCR), Machine Readable Zone (MRZ) extraction, document validation, registry checks, image forgery forensics, biometric face verification, and a hash-chained audit ledger behind a clean, responsive Streamlit interface.
+**VeriScan AI** is an intelligent decision-support platform designed for border security, identity verification, and document screening. It wires together Optical Character Recognition (OCR), Machine Readable Zone (MRZ) extraction, document validation, registry checks, image forgery forensics, biometric face verification (`DeepFace`), and a hash-chained audit ledger behind a clean, responsive Streamlit interface.
 
 ---
 
@@ -8,7 +8,7 @@
 
 - 📄 **Multi-Format Document OCR & Field Extraction**:
   - Powered by Tesseract OCR with built-in fallback pipelines.
-  - **ICAO Doc 9303 MRZ Engine**: Extracts structured fields (`Name`, `Passport Number`, `Nationality`, `Date of Birth`, `Date of Expiry`, `Gender`) from standard 2-line passport MRZ zones, even when visual text is noisy or holographic.
+  - **ICAO Doc 9303 MRZ Engine**: Extracts structured fields (`Name`, `Passport Number`, `Nationality`, `Date of Birth`, `Date of Expiry`, `Gender`) from standard 2-line passport MRZ zones.
   - **Universal Field Parsers**: Supports Passports, Visas, Driving Licenses, National IDs, and Permits.
   - **Per-Field Confidence Scoring**: Assigns a 0–100% confidence rating to every extracted field based on OCR engine metrics and pattern matching.
 
@@ -18,7 +18,7 @@
   - Validates document number shapes and country codes.
 
 - 🗄️ **Registry Database Verification**:
-  - Cross-references extracted document numbers against a mock central registry (`database.py`).
+  - Cross-references extracted document numbers against a central registry database (`modules/database.py`).
   - Identifies document status: `Valid`, `Expired`, `Blacklisted`, or `Not Found`.
 
 - 🛡️ **Image Forensics & Tampering Detection**:
@@ -27,7 +27,7 @@
 
 - 👤 **Biometric Face Verification**:
   - Compares the photo extracted from the document against a live/uploaded selfie.
-  - Supports `DeepFace` / `Face Recognition` backends with a robust OpenCV Haar Cascade fallback comparator.
+  - Supports `DeepFace` neural embeddings with a robust OpenCV Haar Cascade fallback comparator.
 
 - ⚖️ **Multi-Signal Risk Scoring Engine**:
   - Aggregates document validation, registry status, tampering score, and face match similarity into a single 0–100 Risk Score.
@@ -38,7 +38,27 @@
     - 🔴 **CRITICAL Risk** (76–100) — *Hard-floored for registry blacklist hits*.
 
 - 🔗 **Hash-Chained Audit Ledger**:
-  - Cryptographically logs every screening operation into an append-only, SHA-256 hash-chained ledger (`blockchain.py`) for auditability and tamper evidence.
+  - Cryptographically logs every screening operation into an append-only, SHA-256 hash-chained ledger (`modules/blockchain.py`) for auditability and tamper evidence.
+
+---
+
+## 📋 Required Libraries & Dependencies
+
+The complete list of required dependencies is specified in [`requirements.txt`](file:///d:/version/veriscan_ai_3/requirements.txt):
+
+| Package | Category | Purpose |
+| :--- | :--- | :--- |
+| **`streamlit`** | Web Framework | Interactive decision-support dashboard UI |
+| **`opencv-python`** | Computer Vision | Image preprocessing, deskewing, CLAHE, and facial detection |
+| **`pillow`** | Image Utilities | Image loading and format conversions |
+| **`numpy`** | Numerical Computations | Image array manipulations and matrix math |
+| **`pytesseract`** | OCR Engine | Python wrapper for Tesseract OCR text extraction |
+| **`python-dateutil`** | Date Parsing | Flexible date parsing for document expiration and validity rules |
+| **`deepface`** | Biometrics | Neural deep-learning face verification engine |
+| **`tf-keras`** | Deep Learning | Keras backend required by DeepFace |
+| **`tensorflow`** | Deep Learning | Machine learning runtime framework for DeepFace |
+| **`scikit-image`** | Feature Extraction | HOG descriptor extraction and image forgery metrics |
+| **`pytest`** | Testing | Automated test runner for pipeline integration |
 
 ---
 
@@ -70,96 +90,105 @@ flowchart TD
 
 | Module File | Purpose & Responsibilities |
 | :--- | :--- |
-| **[`app.py`](file:///d:/code/SIH/p1/files/veriscan_ai/veriscan_ai/app.py)** | Streamlit entry point. Drives the interactive UI tabs: Upload & Scan, Dashboard, Audit Trail, and Settings. |
-| **[`modules/ocr.py`](file:///d:/code/SIH/p1/files/veriscan_ai/veriscan_ai/modules/ocr.py)** | OCR text extraction, ICAO Doc 9303 MRZ parsing (`extract_mrz`), visual regex heuristics, per-field confidence scoring, and multi-pass OCR. |
-| **[`modules/validation.py`](file:///d:/code/SIH/p1/files/veriscan_ai/veriscan_ai/modules/validation.py)** | Validates logical fields, date sanity checks, expiration checks, and generates pass/warning/fail validation reports. |
-| **[`modules/database.py`](file:///d:/code/SIH/p1/files/veriscan_ai/veriscan_ai/modules/database.py)** | Manages mock registry database queries, document number normalization, and blacklist checks. |
-| **[`modules/tampering.py`](file:///d:/code/SIH/p1/files/veriscan_ai/veriscan_ai/modules/tampering.py)** | Image forensics analyzer: text line consistency, noise discontinuities around photo crops, and EXIF software metadata analysis. |
-| **[`modules/face_verification.py`](file:///d:/code/SIH/p1/files/veriscan_ai/veriscan_ai/modules/face_verification.py)** | Detects faces in document photos and live selfies (`compare_faces`), calculating a similarity percentage verdict. |
-| **[`modules/risk_engine.py`](file:///d:/code/SIH/p1/files/veriscan_ai/veriscan_ai/modules/risk_engine.py)** | Aggregates all signal scores, applies hard risk floors (e.g. blacklist hits), classifies risk bands, and generates human recommendations. |
-| **[`modules/blockchain.py`](file:///d:/code/SIH/p1/files/veriscan_ai/veriscan_ai/modules/blockchain.py)** | Implements an immutable SHA-256 hash-chained block ledger that records all screening events. |
-| **[`utils/preprocessing.py`](file:///d:/code/SIH/p1/files/veriscan_ai/veriscan_ai/utils/preprocessing.py)** | OpenCV image pipeline: orientation normalization, CLAHE contrast enhancement, denoising, and deskewing. |
-| **[`utils/helpers.py`](file:///d:/code/SIH/p1/files/veriscan_ai/veriscan_ai/utils/helpers.py)** | General formatting helpers and badge color mappings. |
+| **[`app.py`](file:///d:/version/veriscan_ai_3/app.py)** | Streamlit entry point. Drives the interactive UI tabs: Upload & Scan, Dashboard, Audit Trail, and Settings. |
+| **[`modules/ocr.py`](file:///d:/version/veriscan_ai_3/modules/ocr.py)** | OCR text extraction, ICAO Doc 9303 MRZ parsing (`extract_mrz`), visual regex heuristics, per-field confidence scoring, and multi-pass OCR. |
+| **[`modules/validation.py`](file:///d:/version/veriscan_ai_3/modules/validation.py)** | Validates logical fields, date sanity checks, expiration checks, and generates pass/warning/fail validation reports. |
+| **[`modules/database.py`](file:///d:/version/veriscan_ai_3/modules/database.py)** | Manages mock registry database queries, document number normalization, and blacklist checks. |
+| **[`modules/tampering.py`](file:///d:/version/veriscan_ai_3/modules/tampering.py)** | Image forensics analyzer: text line consistency, noise discontinuities around photo crops, and EXIF software metadata analysis. |
+| **[`modules/face_verification.py`](file:///d:/version/veriscan_ai_3/modules/face_verification.py)** | Detects faces in document photos and live selfies (`compare_faces`), calculating a similarity percentage verdict. |
+| **[`modules/risk_engine.py`](file:///d:/version/veriscan_ai_3/modules/risk_engine.py)** | Aggregates all signal scores, applies hard risk floors (e.g. blacklist hits), classifies risk bands, and generates human recommendations. |
+| **[`modules/blockchain.py`](file:///d:/version/veriscan_ai_3/modules/blockchain.py)** | Implements an immutable SHA-256 hash-chained block ledger that records all screening events. |
+| **[`utils/preprocessing.py`](file:///d:/version/veriscan_ai_3/utils/preprocessing.py)** | OpenCV image pipeline: orientation normalization, CLAHE contrast enhancement, denoising, and deskewing. |
+| **[`utils/helpers.py`](file:///d:/version/veriscan_ai_3/utils/helpers.py)** | General formatting helpers and badge color mappings. |
 
 ---
 
-## 🚀 Installation & Running Guide
+## 🚀 Step-by-Step Installation & Setup Guide
 
-### Prerequisites
-1. **Python**: Python 3.9+ (Python 3.10 to 3.14 supported).
-2. **Tesseract OCR Binary**: Must be installed on your operating system:
-   - **Windows**: Download Tesseract installer (e.g., from UB-Mannheim) and ensure `tesseract` is added to system `PATH`.
-   - **Ubuntu/Debian**: `sudo apt update && sudo apt install -y tesseract-ocr`
-   - **macOS**: `brew install tesseract`
+### 1. System Prerequisites
+
+#### A. Python Environment
+- **Python Version**: Python 3.9+ (Python 3.10 – 3.14 supported).
+
+#### B. Tesseract OCR Binary (Required for Text Extraction)
+Tesseract OCR must be installed at the OS level:
+- **Windows**: Download the installer from [UB-Mannheim Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki) and ensure `C:\Program Files\Tesseract-OCR` is added to your system `PATH`.
+- **Ubuntu / Debian**:
+  ```bash
+  sudo apt update && sudo apt install -y tesseract-ocr
+  ```
+- **macOS**:
+  ```bash
+  brew install tesseract
+  ```
 
 ---
 
-### Step 1: Clone & Navigate to Project Directory
+### 2. Installation Steps
 
+#### Step 1: Clone & Navigate to Project Directory
 ```bash
-cd d:\code\SIH\p1\files\veriscan_ai\veriscan_ai
+git clone https://github.com/debasisswain28022-maker/veriscan_ai.git
+cd veriscan_ai
 ```
 
-### Step 2: Install Python Dependencies
+#### Step 2: Create & Activate a Virtual Environment (Optional but Recommended)
+- **Windows (PowerShell)**:
+  ```powershell
+  python -m venv venv
+  .\venv\Scripts\Activate.ps1
+  ```
+- **Linux / macOS**:
+  ```bash
+  python3 -m venv venv
+  source venv/bin/activate
+  ```
+
+#### Step 3: Install Required Python Dependencies
+Run `pip` to install all required libraries from [`requirements.txt`](file:///d:/version/veriscan_ai_3/requirements.txt):
 
 ```bash
 pip install -r requirements.txt
 ```
 
----
-
-### Step 3: Launch the Streamlit Web Interface
-
-To run the interactive web application:
+#### Step 4: Verify Face Verification & Core Backend Status
+Run this test command to confirm `DeepFace` and core modules load properly:
 
 ```bash
-python -m streamlit run app.py
+python -c "import modules.face_verification as fv; print('DeepFace Active:', fv._DEEPFACE_AVAILABLE)"
+```
+
+---
+
+### 3. Running the Application
+
+#### Launch the Streamlit Web Application
+Run the interactive decision-support UI:
+
+```bash
+streamlit run app.py
 ```
 
 Open your browser and navigate to **[http://localhost:8501](http://localhost:8501)**.
 
 ---
 
-### Step 4: Run the Automated Test Suite
+### 4. Running the Automated Test Suite
 
-To verify the pipeline and OCR MRZ parser:
+To run end-to-end integration and unit tests:
 
 ```bash
-python -m pytest
+pytest
 ```
 
 ---
 
-### Step 5: Command Line Usage Example
+## ❓ Troubleshooting
 
-You can also run screening directly from Python scripts or CLI:
-
-```python
-import cv2
-from utils import preprocessing
-from modules import ocr, validation, database, risk_engine
-
-# Load image
-img = cv2.imread('d:/code/SIH/p1/files/1.png')
-
-# Run preprocessing & OCR
-steps = preprocessing.run_preprocessing_pipeline(img)
-ocr_res = ocr.extract_fields(steps['contrast_enhanced'], 'Passport')
-
-print("Extracted Fields:", ocr_res['fields'])
-print("Field Confidences:", ocr_res['field_confidence'])
-```
-
----
-
-## 🧪 Testing Benchmarks
-
-- **Test Suite**: `4 / 4 passed (100%)`
-- **Sample Document Benchmarks**:
-  - `1.png` (UAE Passport): Extracted Name (`FARSI AHMAD KAL`), Passport No (`Z43R34255`), Nationality (`ARE`), DOB (`03/07/1978`), Expiry (`10/02/2020`), Sex (`M`) with 90%+ confidence.
-  - `genuine_passport.jpg`: Extracted clean fields, verified valid in registry -> `LOW` Risk.
-  - `blacklisted_passport.jpg`: Matched registry blacklist -> `CRITICAL` Risk.
-  - `tampered_passport.jpg`: Flagged photo substitution & EXIF edit -> `HIGH` Risk.
+- **`tesseract is not installed or it's not in your PATH`**:
+  Ensure the Tesseract OCR binary is installed and its folder is added to your OS `PATH`.
+- **DeepFace Fallback Warning**:
+  If `DeepFace` or `TensorFlow` dependencies are missing, `modules/face_verification.py` will display a warning note and automatically operate using its OpenCV fallback comparator so the application runs without failing.
 
 ---
 
