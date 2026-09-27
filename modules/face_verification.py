@@ -41,7 +41,7 @@ except ImportError:
 try:
     from deepface import DeepFace as _DeepFace
     _DEEPFACE_AVAILABLE = True
-except ImportError:
+except Exception:
     _DEEPFACE_AVAILABLE = False
 
 try:
